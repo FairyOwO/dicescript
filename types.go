@@ -23,9 +23,14 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-
-	"golang.org/x/exp/rand"
 )
+
+type RandomSource interface {
+	Seed(seed uint64)
+	Uint64() uint64
+	MarshalBinary() ([]byte, error)
+	UnmarshalBinary(data []byte) error
+}
 
 type VMValueType int
 type IntType int                        // :IntType
@@ -154,8 +159,8 @@ type Context struct {
 	detailCache      string // 计算过程
 	IsComputedLoaded bool
 
-	Seed    []byte          // 随机种子，16个字节，即双uint64
-	RandSrc *rand.PCGSource // 根据种子生成的source
+	Seed    []byte       // 随机种子，16个字节，即双uint64
+	RandSrc RandomSource // 随机源
 
 	IsRunning      bool // 是否正在运行，Run时会置为true，halt时会置为false
 	CustomDiceInfo []*customDiceItem
@@ -202,9 +207,9 @@ func (ctx *Context) Init() {
 	ctx.detailCache = ""
 	ctx.DetailSpans = nil
 	if ctx.Seed != nil {
-		s := rand.PCGSource{}
+		s := NewChaChaSource()
 		_ = s.UnmarshalBinary(ctx.Seed)
-		ctx.RandSrc = &s
+		ctx.RandSrc = s
 	}
 }
 
