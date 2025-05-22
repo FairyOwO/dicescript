@@ -7,9 +7,9 @@ import (
 func TestRollDistribution(t *testing.T) {
 	src := NewChaChaSource()
 	const (
-		sides        = 6
-		tries        = 1000000 // 增加采样次数
-		significance = 0.05    // 显著性水平
+		sides        = 100
+		tries        = 1000000
+		significance = 0.05 // 显著性水平
 	)
 	counts := make([]int, sides)
 
@@ -29,9 +29,8 @@ func TestRollDistribution(t *testing.T) {
 		chiSquare += (diff * diff) / expected
 	}
 
-	// 自由度为sides-1=5时，显著性水平0.05的临界值为11.07
 	// 如果卡方统计量大于临界值，则拒绝均匀分布的假设
-	criticalValue := 11.07
+	criticalValue := 124.34 // 用 100 的临时代替一下
 	if chiSquare > criticalValue {
 		t.Errorf("卡方检验失败: χ² = %.4f > %.4f, 分布可能不均匀\n次数统计:", chiSquare, criticalValue)
 		for i, count := range counts {

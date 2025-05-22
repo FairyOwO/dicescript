@@ -2,6 +2,7 @@ package dicescript
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 
@@ -23,46 +24,65 @@ func NewChaChaSource() *ChaChaSource {
 }
 
 // Seed 设置随机源的种子
-// 为了向后兼容,这里只使用种子的低64位
 func (s *ChaChaSource) Seed(seed uint64) {
-	// 使用seed生成key和nonce
-	var keyData [40]byte // 32字节key + 8字节seed
-	binary.LittleEndian.PutUint64(keyData[32:], seed)
-
-	// 如果没有提供种子,从系统随机源获取
 	if seed == 0 {
-		if _, err := rand.Read(keyData[:]); err != nil {
-			panic(fmt.Sprintf("failed to read random seed: %v", err))
+		if _, err := rand.Read(s.key[:]); err != nil {
+			panic(fmt.Sprintf("failed to read random bytes: %v", err))
 		}
+		if _, err := rand.Read(s.nonce[:]); err != nil {
+			panic(fmt.Sprintf("failed to read random bytes: %v", err))
+		}
+	} else {
+		seedBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(seedBytes, seed)
+
+		keyDigest := sha256.Sum256(seedBytes)
+		copy(s.key[:], keyDigest[:32])
+
+		nonceInput := append([]byte("NONCE_PREFIX_SALT_FOR_CHACHA_"), seedBytes...) // 使用更独特的盐
+		nonceDigest := sha256.Sum256(nonceInput)
+		copy(s.nonce[:], nonceDigest[:12])
 	}
-
-	copy(s.key[:], keyData[:32])
-	copy(s.nonce[:], keyData[20:32]) // 使用key的一部分作为nonce
-
-	// 重置stream
 	s.stream = nil
 	s.pos = 0
 }
 
 // Uint64 生成一个随机的uint64数字
 func (s *ChaChaSource) Uint64() uint64 {
-	// 确保有足够的随机字节
 	if s.stream == nil || s.pos > len(s.stream)-8 {
-		// 生成新的随机字节
-		cipher, err := chacha20.NewUnauthenticatedCipher(s.key[:], s.nonce[:])
-		if err != nil {
-			panic(fmt.Sprintf("failed to create chacha20 cipher: %v", err))
+
+		if s.stream != nil {
+			for i := 0; i < 12; i++ {
+				s.nonce[i]++
+				if s.nonce[i] != 0 {
+					break
+				}
+
+				if i == 11 && s.nonce[i] == 0 {
+					// 理论上，nonce有 2^96 种可能，不太可能在合理时间内耗尽。
+					// 但作为安全措施，可以 panic 或记录警告。
+					panic("ChaCha20 nonce (12-byte) has overflowed. Re-seed the generator or review usage.")
+				}
+			}
 		}
 
-		// 生成1024字节的随机数据
-		s.stream = make([]byte, 1024)
+		cipher, err := chacha20.NewUnauthenticatedCipher(s.key[:], s.nonce[:])
+		if err != nil {
+			panic(fmt.Sprintf("failed to create chacha20 cipher (key: %x, nonce: %x): %v", s.key, s.nonce, err))
+		}
+
+		if s.stream == nil {
+			s.stream = make([]byte, 1024)
+		}
+
+		// 用 ChaCha20 的密钥流填充缓冲区。
 		cipher.XORKeyStream(s.stream, s.stream)
-		s.pos = 0
+		s.pos = 0 // 重置读取位置
 	}
 
-	// 从stream中读取uint64
+	// 从缓冲区中读取一个 uint64
 	v := binary.LittleEndian.Uint64(s.stream[s.pos:])
-	s.pos += 8
+	s.pos += 8 // 更新读取位置
 	return v
 }
 
