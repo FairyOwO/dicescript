@@ -24,22 +24,21 @@ func _roll32(src RandomSource, dicePoints int) int {
 		return 0
 	}
 
-	v := uint32(src.Uint64() >> 32)
+	v_raw := src.Uint64()
+	v := uint32(v_raw >> 32)
 	n := uint32(dicePoints)
 	// 下面这段取整代码来自 golang 的 exp/rand
 	if n&(n-1) == 0 { // n is power of two, can mask
 		return int(v&(n-1) + 1)
 	}
-	if v > math.MaxUint32-n { // Fast check.
-		ceiling := math.MaxUint32 - math.MaxUint32%n
-		for v >= ceiling {
-			v = uint32(src.Uint64() >> 32)
-		}
+	ceiling := math.MaxUint32 - math.MaxUint32%n
+	for v >= ceiling { // 如果 v 落在了不完整的最后一个区间，则重新取值
+		v = uint32(src.Uint64() >> 32)
 	}
 	return int(v%n + 1)
 }
 
-func _roll64(src RandomSource, dicePoints int64, mod int) int64 {
+func _roll64(src RandomSource, dicePoints int64) int64 {
 	if dicePoints > math.MaxInt64-1 {
 		return 0
 	}
@@ -50,11 +49,9 @@ func _roll64(src RandomSource, dicePoints int64, mod int) int64 {
 	if n&(n-1) == 0 { // n is power of two, can mask
 		return int64(v&(n-1) + 1)
 	}
-	if v > math.MaxUint64-n { // Fast check.
-		ceiling := math.MaxUint64 - math.MaxUint64%n
-		for v >= ceiling {
-			v = src.Uint64()
-		}
+	ceiling := math.MaxUint64 - math.MaxUint64%n
+	for v >= ceiling { // 如果 v 落在了不完整的最后一个区间，则重新取值
+		v = src.Uint64()
 	}
 	return int64(v%n + 1)
 }
@@ -75,7 +72,7 @@ func Roll(src RandomSource, dicePoints IntType, mod int) IntType {
 
 	// 大部分情况会走这个分支
 	if IntTypeSize == 8 {
-		return IntType(_roll64(src, int64(dicePoints), mod))
+		return IntType(_roll64(src, int64(dicePoints)))
 	}
 
 	return IntType(_roll32(src, int(dicePoints)))
